@@ -1,142 +1,80 @@
 # FuzzForce
 
-FuzzForce finds the test case your wrong-answer solution fails on.
+When a Codeforces submission gets "wrong answer on test 7", you can't see test 7. So you do what everyone does: write a brute force, write a random generator, run both against your code and hope something differs. I've done this more times than I'd like to admit.
 
-Give it a competitive programming problem and a solution that gets "wrong answer". It returns the smallest input that breaks the solution, confirmed by actually running the code, along with a short explanation of the bug.
+FuzzForce does it for you. Give it the problem statement and your wrong solution, and it gives back the smallest input that breaks your code, plus a couple of sentences on what went wrong. Every counterexample is checked by actually running the code before it's shown to you.
 
-Built for the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026). Indie Developer track, theme: Build for Your World. It runs on Muse Spark through the Meta Model API, with Muse Wonder for harder problems.
-
-All code in this repository was written during the hackathon.
-
-## The problem
-
-Every competitive programmer has seen "wrong answer on test 7" without being able to see test 7. The usual fix is to write a brute-force solution and a random generator by hand, run both against your code for a while, and hope something differs. It works, but it takes time on every problem, and it is easy to get the brute force or the generator wrong and chase a bug that isn't there.
-
-FuzzForce automates that whole loop and refuses to report anything it has not verified.
+I'm building this for the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026), in the indie track under "Build for Your World". It uses Muse Spark and Muse Wonder through the Meta Model API. Everything in this repo was written during the hackathon.
 
 ## How it works
 
-1. **Read the statement.** The problem statement goes to Muse Spark, which returns structured JSON containing an input validator, a brute-force reference solution, a second reference written with a different approach, and generators for random, edge-case and adversarial inputs.
-2. **Check the generated pieces.** The validator must accept the sample inputs, and both references must reproduce the sample outputs. If a check fails, the model sees the error and repairs its code. If it keeps failing, the problem is escalated to Muse Wonder.
-3. **Hunt for a failing input.** Each generator produces inputs. An input is kept only if it passes the validator. The submission and both references run on it inside a sandbox with time and memory limits.
-4. **Confirm.** A failure counts only when both references agree with each other and the submission disagrees with them.
-5. **Shrink.** The failing input is reduced by removing lines, lowering sizes and simplifying values. A candidate is kept only if it still passes the validator and the submission still fails on it.
-6. **Explain.** The model gets the statement, the submission, the minimal input, the expected output and the actual output, and writes a two to three sentence explanation of the bug.
+The problem statement goes to Muse Spark, which writes four things: a validator for the input format, a brute-force solution, a second solution that uses a different approach, and a few generators (random, edge cases, adversarial).
 
-### The reporting rule
+None of that is trusted yet. FuzzForce first runs it on the sample inputs. If the validator rejects a sample, or either solution gets a sample wrong, the model is shown the error and tries again. If it still can't get it right, the problem goes to Muse Wonder.
 
-A counterexample is reported only if the input passes the validator and two independently written references agree on the answer. If that cannot be established, FuzzForce says so instead of guessing.
+Once the pieces pass, the generators produce inputs, the validator throws out the invalid ones, and your solution and both references run on the rest inside a sandbox with time and memory limits. An input only counts as a failure when the two references agree with each other and your solution doesn't. That rule is the point of the whole project: if FuzzForce can't confirm a failure, it says so instead of guessing.
 
-## Evaluation
+The failing input then gets shrunk. It removes lines, lowers n, simplifies values, and keeps a change only if the input is still valid and your solution still fails on it. When nothing more can be removed, the model gets the statement, your code, the small input and both outputs, and writes the explanation.
 
-Evaluated on CodeContests problems that have known-wrong submissions. The known-correct solutions in the dataset act as the oracle, so any reported counterexample on which a correct solution disagrees with the references is counted as a false counterexample.
+## Results
 
-Compared against a single-shot baseline where the model is asked to guess a breaking input with no execution loop.
+I'm testing on CodeContests problems that have known-wrong submissions, and comparing against a baseline where the model just guesses a breaking input without running anything. The known-correct solutions in the dataset let me catch false counterexamples.
 
-| Metric | FuzzForce | Single-shot baseline |
-| --- | --- | --- |
-| Problems evaluated | TBD | TBD |
-| Real counterexample found | TBD | TBD |
-| False counterexamples | TBD | TBD |
-| Median input size before shrinking | TBD | TBD |
-| Median input size after shrinking | TBD | n/a |
-| Average cost per problem | TBD | TBD |
+The numbers will go here once the full run is done.
 
-Ablations:
+## Running it
 
-| Variant | Found rate | False rate |
-| --- | --- | --- |
-| Full pipeline | TBD | TBD |
-| No validator | TBD | TBD |
-| One reference instead of two | TBD | TBD |
-| No shrinking | TBD | TBD |
-| Muse Spark only, no Wonder escalation | TBD | TBD |
-
-Results, the raw run logs and the failure analysis are in `results/`.
-
-## Setup
-
-Requirements: Python 3.11 or newer, a Meta Model API key, and a C++ compiler if you want to test C++ submissions.
+You need Python 3.11 or newer and a Meta Model API key. A C++ compiler is only needed if you want to test C++ submissions.
 
 ```
-git clone https://github.com/<your-username>/fuzzforce.git
+git clone https://github.com/hiten-08/fuzzforce.git
 cd fuzzforce
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-Create the key at the Meta Model API dashboard and export it:
-
-```
 export MODEL_API_KEY="your-key"
 ```
 
-The key is read from the environment and is never stored in the repository.
+To check a solution:
 
-To download the evaluation data:
+```
+python -m fuzzforce run --statement problem.txt --solution wrong.py
+```
+
+To run the evaluation (downloads the dataset first):
 
 ```
 python scripts/download_data.py
-```
-
-The dataset is not included in this repository.
-
-## Usage
-
-```
-python -m fuzzforce run \
-  --statement problem.txt \
-  --solution wrong.py
-```
-
-Output:
-
-- the minimal failing input
-- the expected output and the output of the submission
-- a short explanation of the bug
-
-To run the evaluation:
-
-```
 python -m fuzzforce eval --limit 100
 ```
 
-## Project structure
+## What's in the repo
 
 ```
 fuzzforce/
-  sandbox.py      runs code with time and memory limits
-  model.py        Meta Model API client, structured output, token logging
-  generate.py     builds the validator, references and generators
-  check.py        trust checks on the generated pieces
-  search.py       runs generators and finds failing inputs
-  shrink.py       reduces a failing input
-  explain.py      writes the bug explanation
-  eval/           evaluation harness and baseline
+  sandbox.py     runs code with time and memory limits
+  model.py       talks to the Meta Model API and logs token use
+  generate.py    asks the model for the validator, references and generators
+  check.py       tests the generated pieces on the samples
+  search.py      runs the generators and looks for a failing input
+  shrink.py      makes a failing input smaller
+  explain.py     writes the bug explanation
+  eval/          evaluation and the baseline
 scripts/
   download_data.py
 results/
 ```
 
-## Scope and limitations
+## Limits
 
-- Problems must have a single correct output for each input. Problems with multiple valid answers, interactive problems and problems with floating-point answers are not supported yet.
-- Supported languages for submissions: Python and C++.
-- Failures reported are wrong answers and runtime errors. Time limit failures are not reported in this version.
-- The two references are written by the same model family, so they can share a mistake. Prompting them toward different approaches reduces this, and the disagreement rate is logged, but it does not remove the risk.
-- Very large problems where even a correct brute force cannot finish on small inputs cannot be checked.
+- Only problems with one correct output per input. No interactive problems, no "print any valid answer", no floating-point answers.
+- Python and C++ submissions only.
+- It reports wrong answers and runtime errors, not time limit failures.
+- Both references come from the same model family, so they can share a mistake. Asking for different approaches helps, but it doesn't remove the risk.
+- If even a correct brute force can't finish on small inputs, FuzzForce can't check the problem.
 
-## Built with
+## Credits
 
-- Meta Model API: Muse Spark for generation, repair and explanations, Muse Wonder for escalation. Uses structured output and tool calling.
-- Python and the OpenAI-compatible SDK
-- CodeContests, released by DeepMind, for evaluation. See the dataset's license for terms of use.
+The evaluation uses CodeContests from DeepMind. Check the dataset's own license before reusing it. Models come from Meta's Muse family through the Meta Model API.
 
-## Built during the hackathon
-
-Everything in this repository, including the sandbox, the model client, the generation and checking pipeline, the shrinker and the evaluation harness, was written between Oct 26 and Nov 4, 2026. The commit history shows the order of work. External pieces are the Meta Model API, the CodeContests dataset and the open source libraries listed in `requirements.txt`.
-
-## License
-
-MIT
+MIT license.
