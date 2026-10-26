@@ -1,0 +1,3 @@
+datasets>=2.19
+openai>=1.40
+python-dotenv>=1.0
